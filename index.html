@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#0A0A0F">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LinguaPrime">
+    <meta name="description" content="Hollandaca için günlük çalışma planı, aralıklı tekrar ve bağlamlı kartlarla kişisel öğrenme koçu">
+
+    <!-- Kılavuz 1.2: Content Security Policy (CSP) İyileştirmesi -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.cdnfonts.com https://cdn.jsdelivr.net;
+        font-src 'self' https://fonts.gstatic.com https://fonts.cdnfonts.com https://cdn.jsdelivr.net;
+        connect-src 'self' https://api.groq.com;
+        img-src 'self' data:;
+        media-src 'self' blob:;
+        frame-src 'none';
+        object-src 'none';
+        base-uri 'self';
+        form-action 'self';">
+
+    <!-- PWA MANIFEST - Güvenlik ve Standardizasyon gereği dış dosyaya taşındı -->
+    <link rel="manifest" href="manifest.json">
+
+    <title>LinguaPrime</title>
+    <!-- Premium Grafik Kütüphanesi -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Şifreleme Kütüphanesi (Kritik Eksiklik Giderildi) -->
+    <script src="https://cdn.jsdelivr.net/npm/simple-crypto-js@3.0.1/dist/SimpleCrypto.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="ambient-glow" id="ambientGlow"></div>
+    <canvas class="confetti-canvas" id="confettiCanvas"></canvas>
+    <div id="toast">Sistem Bildirimi</div>
+
+    <!-- API KEY CONFIG SCREEN -->
+    <div class="groq-setup" id="groqSetupScreen" style="display: none;">
+        <div class="groq-setup-icon">🧠</div>
+        <div class="groq-setup-title">LinguaPrime AI Kurulumu</div>
+        <div class="groq-setup-desc" id="groqSetupDesc">API anahtarınızı şifrelemek için bir <b>Master Şifre</b> belirleyin. Bu şifre kaydedilmez, her oturumda anahtarı çözmek için istenir.</div>
+        <input type="password" class="search-input" id="groqKeyInput" placeholder="Groq API Key (gsk_...)" style="width: 100%; max-width: 360px; text-align: center; margin-bottom: 8px; font-size: 14px;">
+        <input type="password" class="search-input" id="masterPasswordInput" placeholder="Master Şifre" style="width: 100%; max-width: 360px; text-align: center; margin-bottom: 12px; font-size: 14px;">
+        <button class="btn-primary" id="saveGroqKeyBtn" style="width: 100%; max-width: 360px;">🔐 Şifrele ve Kaydet</button>
+        <button class="btn-primary" id="unlockGroqBtn" style="width: 100%; max-width: 360px; display: none; margin-top: 8px;">🔓 Anahtarı Çöz</button>
+        <div class="groq-setup-hint" style="font-size: 11px; margin-top: 10px; color: var(--muted);">Anahtarınız yoksa <a href="https://console.groq.com/" target="_blank" style="color:var(--orange);">groq.com</a> adresinden ücretsiz alabilirsiniz.</div>
+    </div>
+
+    <!-- PWA INSTALL BANNER POPUP -->
+    <div class="pwa-banner" id="pwaInstallBanner">
+        <div class="pwa-banner-text">
+            <div class="pwa-banner-title">LinguaPrime Uygulaması</div>
+            <div class="pwa-banner-sub">Hızlı erişim için ana ekrana ekleyin</div>
+        </div>
+        <div id="iosHint" class="ios-install-hint">
+            iPhone'da yüklemek için: <br>
+            1. Paylaş butonuna ( <span style="font-size:16px;">⎋</span> ) basın. <br>
+            2. "Ana Ekrana Ekle"yi seçin.
+        </div>
+        <button class="pwa-banner-btn" id="pwaInstallBtn">Yükle</button>
+        <button class="pwa-banner-close" id="pwaCloseBtn" aria-label="Kapat">×</button>
+    </div>
+
+    <!-- NAVIGATION MENU ELEMENT -->
+    <button class="menu-btn" id="menuBtn" aria-label="Menüyü aç">☰</button>
+    <div class="streak-badge" id="streakBadge">🔥 <span id="streakCount">0</span> Gün</div>
+    <button class="quick-add-btn" id="quickAddBtn" aria-label="Hızlı kart ekle">＋</button>
+    <button class="voice-badge" id="voiceBadge" aria-label="Sesli komut başlat">🎙</button>
+    
+    <div class="overlay" id="overlay"></div>
+
+    <!-- GLOBAL APPS DRAWER SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-logo">LinguaPrime</span>
+            <button class="toggle-deck-btn" id="themeToggleBtn">☀️ Işık Modu</button>
+        </div>
+        <div style="padding: 12px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;">
+            <input class="search-input" id="deckSearch" placeholder="🔍 Deste ara..." style="width: 100%;">
+            <button id="multiDeckStudyBtn" class="btn-primary" style="width:100%; font-size:12px; padding:8px;">🎯 Çoklu Deste Çalış</button>
+        </div>
+        <div class="deck-list-container" id="deckListSidebar"></div>
+        
+        <div class="sidebar-footer">
+            <div class="sidebar-section-title">Çalışma</div>
+            <div class="sidebar-item" id="kesfetBtn">Bugünkü kartlar</div>
+            <div class="sidebar-item" id="weaknessBtn">Zorlandıklarım</div>
+            <div class="sidebar-item" id="podcastBtn">Dinleme pratiği</div>
+            <div class="sidebar-item" id="statsBtn">İlerleme</div>
+            <div class="sidebar-section-title">İçerik</div>
+            <div class="sidebar-item" id="aiCardGenBtn">Tematik kart üret</div>
+            <div class="sidebar-item" id="addDeckBtn">Yeni deste</div>
+            <div class="sidebar-item" id="manageCardsBtn">Kartları düzenle</div>
+            <div class="sidebar-item" id="aiDictBtn">Sözlük ve bağlam</div>
+            <div class="sidebar-section-title">Pratik araçları</div>
+            <div class="sidebar-item secondary-tool" id="storyBtn">Seviyeli hikaye</div>
+            <div class="sidebar-item secondary-tool" id="correctBtn">Cümle düzeltme</div>
+            <div class="sidebar-item secondary-tool" id="chatBtn">Konuşma partneri</div>
+            <div class="sidebar-item secondary-tool" id="rpgBtn">Kültür senaryosu</div>
+            <div class="sidebar-item secondary-tool" id="whatsappBtn">Mesaj pratiği</div>
+            <div class="sidebar-item secondary-tool" id="memoryBtn">Hatırlama ipucu</div>
+            <div class="sidebar-item secondary-tool" id="socialBtn">Sosyal kullanım</div>
+            <div class="sidebar-item secondary-tool" id="matchingBtn">Eşleştirme</div>
+            <div class="sidebar-item secondary-tool" id="newsBtn">Kısa haberler</div>
+            <div class="sidebar-item secondary-tool" id="accentBtn">Telaffuz farkları</div>
+            <div class="sidebar-item secondary-tool" id="lyricsBtn">Şarkı ifadeleri</div>
+            <div class="sidebar-item secondary-tool" id="linguaDnaBtn">Dil profili</div>
+            <div class="sidebar-item secondary-tool" id="errorMuseumBtn">Hata geçmişi</div>
+            <div class="sidebar-item" id="settingsBtn">Ayarlar ve veri</div>
+        </div>
+        
+        <div class="sidebar-item" style="border-top: 1px solid var(--border); margin-top: auto;">
+            <label class="switch" style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
+                <input type="checkbox" id="dyslexicToggle" style="width:16px; height:16px;"> 📖 Disleksi Modu
+            </label>
+        </div>
+    </div>
+
+    <!-- FOCUS MODE OVERLAY -->
+    <div id="focusOverlay" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1350; display:none; backdrop-filter:blur(10px);">
+        <div style="position:absolute; top:20px; width:100%; text-align:center; color:var(--orange); font-weight:800; font-size:12px; letter-spacing:2px;">ODAKLANMA MODU AKTİF</div>
+    </div>
+
+    <!-- CORE LEARNING AREA FRAMEWORK -->
+    <div class="main">
+        <section class="daily-coach" aria-label="Günlük çalışma planı">
+            <div class="coach-copy">
+                <span class="coach-kicker">Bugünün planı</span>
+                <strong id="dailyPlanTitle">Kartlar hazırlanıyor</strong>
+                <span id="dailyPlanSubtitle">Zayıf kelimeler ve tekrar zamanı gelenler öne alınır.</span>
+            </div>
+            <button class="coach-start-btn" id="coachStartBtn" type="button">Başla</button>
+        </section>
+
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="classic">Kart</button>
+            <button class="mode-btn" data-mode="typing">Yaz</button>
+            <button class="mode-btn" data-mode="mcq">Seç</button>
+            <button class="mode-btn" data-mode="woordvolgorde">Cümle</button>
+        </div>
+
+        <div class="direction-toggle">
+            <span style="font-size:11px; color:var(--subtle); font-weight:600;">Yön:</span>
+            <button class="direction-btn active" id="dirNL2TR" title="Hollandaca → Türkçe">NL → TR</button>
+            <button class="direction-btn" id="dirTR2NL" title="Türkçe → Hollandaca">TR → NL</button>
+            <button class="direction-btn" id="dirRandom" title="Rastgele yön">🔀 Rastgele</button>
+        </div>
+
+        <div class="progress-bar-container">
+            <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBarFill"></div></div>
+            <div class="progress-text" id="progressText">Bugün 0/0 kart tamamlandı</div>
+        </div>
+
+        <div class="card-area">
+            <div class="card-container">
+                <div class="card" id="mainCard">
+                    <!-- Front face -->
+                    <div class="card-face card-front">
+                        <span class="swipe-icon left">❌</span>
+                        <span class="swipe-icon right">✅</span>
+                        <div class="badge" id="cardDeckBadge">Genel</div>
+                        <div class="card-meta-row">
+                            <span id="cardLevelBadge">A1</span>
+                            <span id="cardNextBadge">Bugün</span>
+                        </div>
+                        <div class="word" id="cardFrontWord">Uygulamaya Başlayın</div>
+                        <button class="tts-btn" id="frontTTSBtn">Telaffuz</button>
+                        <div class="learning-level-container">
+                            <span class="learning-level-label">Öğrenme</span>
+                            <div class="learning-level-bar"><div class="learning-level-fill"></div></div>
+                        </div>
+                        <div id="testArea" style="width: 100%; margin-top: 15px;"></div>
+                    </div>
+                    <!-- Back face -->
+                    <div class="card-face card-back">
+                        <div class="meaning" id="cardBackMeaning">Deste Seçin veya Kart Ekleyin</div>
+                        <div class="sentence" id="cardBackSentence">Örnek cümle burada görünecektir.</div>
+                        <div class="context-grid" id="cardContextGrid">
+                            <div><span>Kullanım</span><strong id="cardUsageContext">Günlük konuşma</strong></div>
+                            <div><span>Dil tonu</span><strong id="cardRegister">Nötr</strong></div>
+                            <div><span>Artikel</span><strong id="cardArticleInfo">-</strong></div>
+                        </div>
+                        <div class="card-story-box" id="cardBackStory">
+                            <span class="card-story-title">Mini Hikaye</span>
+                            <div class="card-story-text" id="cardBackStoryText"></div>
+                            <div class="card-story-translation" id="cardBackStoryTranslation"></div>
+                        </div>
+                        <div id="cardMnemonic" style="margin-top:12px; font-size:12px; color:var(--purple); font-style:italic; border-top:1px dashed var(--border); padding-top:8px; display:none;"></div>
+                        <button class="tts-btn" id="backTTSBtn">Oku</button>
+                        <button class="tts-btn hidden-card-ai" id="generateCardStoryBtn">Mini Hikaye Üret</button>
+                        <div id="cardAccuracyBadge" style="margin-top:10px; font-size:11px; color:var(--subtle); font-weight:600;"></div>
+                        <div class="learning-level-container">
+                            <span class="learning-level-label">Ustalık</span>
+                            <div class="learning-level-bar"><div class="learning-level-fill"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="shortcut-hint">
+            <span style="font-size:10px; color:var(--muted);">
+                <span class="kbd" aria-label="Klavye Kısayolu: Boşluk Tuşu">Space</span> Çevir &nbsp;
+                <span class="kbd" aria-label="Klavye Kısayolu: 1">1</span>Tekrar &nbsp;
+                <span class="kbd" aria-label="Klavye Kısayolu: 2">2</span>Zor &nbsp;
+                <span class="kbd" aria-label="Klavye Kısayolu: 3">3</span>İyi &nbsp;
+                <span class="kbd" aria-label="Klavye Kısayolu: 4">4</span>Kolay &nbsp;
+                <span class="kbd" aria-label="Klavye Kısayolu: Z">Z</span>Geri Al
+            </span>
+        </div>
+
+        <div class="action-bar">
+            <button class="action-btn again" id="btnAgain" aria-label="Tekrar çalış, kısayol tuşu 1">Tekrar</button>
+            <button class="action-btn hard" id="btnHard" aria-label="Zor hatırlandı, kısayol tuşu 2">Zor</button>
+            <button class="action-btn good" id="btnGood" aria-label="İyi hatırlandı, kısayol tuşu 3">İyi</button>
+            <button class="action-btn easy" id="btnEasy" aria-label="Kolay hatırlandı, kısayol tuşu 4">Kolay</button>
+            <button class="action-btn undo-btn" id="undoBtn" aria-label="Hamleyi geri al, kısayol tuşu Z">Geri</button>
+        </div>
+    </div>
+
+    <!-- MODAL POPUPS INVENTORY -->
+    <!-- 1. DECK CREATOR MODAL -->
+    <div class="modal" id="addDeckModal">
+        <h3>➕ Yeni Deste Oluştur</h3>
+        <input type="text" id="newDeckNameInput" placeholder="Deste adı girin (Örn: Seyahat Kelimeleri)...">
+        <div style="display:flex; gap:8px; align-items:center;">
+            <label style="font-size:12px; color:var(--subtle); white-space:nowrap;">Renk:</label>
+            <div id="deckColorPicker" style="display:flex; gap:6px; flex-wrap:wrap;">
+                <span class="deck-color-opt" data-color="#F97316" style="background:#F97316; width:22px; height:22px; border-radius:50%; cursor:pointer; border:2px solid white;"></span>
+                <span class="deck-color-opt" data-color="#3B82F6" style="background:#3B82F6; width:22px; height:22px; border-radius:50%; cursor:pointer;"></span>
+                <span class="deck-color-opt" data-color="#22C55E" style="background:#22C55E; width:22px; height:22px; border-radius:50%; cursor:pointer;"></span>
+                <span class="deck-color-opt" data-color="#8B5CF6" style="background:#8B5CF6; width:22px; height:22px; border-radius:50%; cursor:pointer;"></span>
+                <span class="deck-color-opt" data-color="#EF4444" style="background:#EF4444; width:22px; height:22px; border-radius:50%; cursor:pointer;"></span>
+                <span class="deck-color-opt" data-color="#F59E0B" style="background:#F59E0B; width:22px; height:22px; border-radius:50%; cursor:pointer;"></span>
+            </div>
+            <label style="font-size:12px; color:var(--subtle); white-space:nowrap; margin-left:8px;">Emoji:</label>
+            <input type="text" id="newDeckEmoji" placeholder="📁" style="width:50px; text-align:center; font-size:18px;">
+        </div>
+        <div class="modal-buttons">
+            <button class="btn-secondary" onclick="closeModal('addDeckModal')">İptal</button>
+            <button class="btn-primary" id="saveNewDeckBtn">Oluştur</button>
+        </div>
+    </div>
+
+    <!-- 2. CARD MANAGEMENT PANEL -->
+    <div class="modal" id="manageCardsModal" style="max-width: 720px;">
+        <h3>📋 Kart Yönetim Paneli</h3>
+        <div style="display: flex; gap: 8px;">
+            <input type="text" class="search-input" id="cardManageSearch" placeholder="Kartlarda veya anlamlarda ara...">
+            <select id="cardManageDeckFilter" style="width: 140px;"></select>
+        </div>
+        <button class="btn-primary" style="font-size: 12px; padding: 6px 12px;" onclick="document.getElementById('manualCardForm').style.display='flex';" id="openAddCardFormBtn">➕ Yeni Manuel Kart Ekle</button>
+        
+        <div id="manualCardForm" style="display:none; border: 1px solid var(--border); padding: 12px; border-radius: 12px; flex-direction: column; gap: 8px;">
+            <select id="mcDeckSelect" style="background: var(--surface2); border: 1px solid var(--surface3); padding: 10px 14px; border-radius: 12px; color: var(--text); font-size: 14px; width: 100%;"></select>
+            <input type="text" id="mcWord" placeholder="Hollandaca Kelime/İfade *">
+            <input type="text" id="mcMeaning" placeholder="Türkçe Anlamı *">
+            <input type="text" id="mcSentence" placeholder="Örnek Cümle (Hollandaca)">
+            <div style="display:grid; grid-template-columns: 0.8fr 1.2fr; gap:8px;">
+                <select id="mcLevel">
+                    <option value="A1">A1</option>
+                    <option value="A2">A2</option>
+                    <option value="B1">B1</option>
+                    <option value="B2">B2</option>
+                </select>
+                <input type="text" id="mcContext" placeholder="Kısa bağlam: nerede kullanılır?">
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                <select id="mcRegister">
+                    <option value="Nötr">Nötr</option>
+                    <option value="Günlük">Günlük</option>
+                    <option value="Resmi">Resmi</option>
+                </select>
+                <select id="mcArticle">
+                    <option value="">Artikel yok / bilinmiyor</option>
+                    <option value="de">de</option>
+                    <option value="het">het</option>
+                </select>
+            </div>
+            <input type="text" id="mcConjugation" placeholder="Fiil ise Çekimleri (ik, je, we vb. virgülle ayırın)">
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="document.getElementById('manualCardForm').style.display='none'">Kapat</button>
+                <button class="btn-primary" id="saveManualCardBtn">Kaydet</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Kelime (NL)</th><th>Anlamı (TR)</th><th>İşlem</th></tr>
+                </thead>
+                <tbody id="manageCardsTableBody"></tbody>
+            </table>
+        </div>
+        <div class="modal-buttons">
+            <button class="btn-secondary" onclick="closeModal('manageCardsModal')">Kapat</button>
+        </div>
+    </div>
+
+    <!-- 3. AI STORY ENGINE MODAL -->
+    <div class="modal full-screen" id="storyModal">
+        <h3>📖 AI İnteraktif Hikaye Üretici</h3>
+        <div class="mascot-container" id="storyMascot"></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <select id="storyLevel">
+                <option value="A1">A1 Seviye</option>
+                <option value="A2">A2 Seviye</option>
+                <option value="B1">B1 Seviye</option>
+                <option value="B2">B2 Seviye</option>
+            </select>
+            <select id="storyTheme">
+                <option value="Günlük Yaşam">Günlük Yaşam</option>
+                <option value="Hollanda'da İş Görüşmesi">İş Görüşmesi</option>
+                <option value="Doktor & Sağlık Sektörü">Sağlık / Doktor</option>
+                <option value="Süpermarket & Alışveriş">Alışveriş / Albert Heijn</option>
+            </select>
+        </div>
+        <div style="margin: 8px 0;">
+            <label style="font-size: 12px; font-weight: bold; margin-bottom: 4px; display: block;">Çoklu Deste Seçimi (Hikaye Kelimeleri İçin):</label>
+            <div id="storyDeckSelectorZone" style="display: flex; flex-direction: column; gap: 6px; max-height: 110px; overflow-y: auto; padding: 4px; background: var(--surface2); border-radius: 12px;"></div>
+        </div>
+        <button class="ai-btn" id="generateStoryBtn" style="width: 100%; justify-content: center;">✨ Hikaye Yaz ve Çevir</button>
+        <div class="correction-box" id="storyOutput" style="display: none; overflow-y: auto;">
+            <div id="storyTextContainer" style="font-size:14px; line-height:1.6;"></div>
+            <hr style="margin:8px 0; opacity:0.1;">
+            <div id="storyTrContainer" style="font-size:13px; color:var(--subtle);"></div>
+        </div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('storyModal')">Kapat</button></div>
+    </div>
+
+    <!-- 4. SENTENCE CORRECTOR MODAL -->
+    <div class="modal" id="correctModal">
+        <h3>✍ AI Akıllı Cümle Düzeltici</h3>
+        <textarea id="correctionInput" placeholder="Hollandaca kurduğunuz bir cümleyi yazın..." rows="3"></textarea>
+        <button class="ai-btn" id="checkCorrectionBtn" style="width: 100%; justify-content: center;">🔍 Cümle Analizi Yap</button>
+        <div class="correction-box" id="correctionResult" style="display: none;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('correctModal')">Kapat</button></div>
+    </div>
+
+    <!-- 5. WEAKNESS ANALYSIS MODAL -->
+    <div class="modal" id="weaknessModal">
+        <h3>🎯 Zayıf Noktalar Analiz Paneli</h3>
+        <div id="weaknessListContainer" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('weaknessModal')">Kapat</button></div>
+    </div>
+
+    <!-- 6. AI DICTIONARY & COMPOSER MODAL -->
+    <div class="modal full-screen" id="aiDictModal">
+        <h3>🔤 AI Sözlük & Kart Üretici</h3>
+        <input type="text" id="aiDictQuery" placeholder="Aramak istediğiniz Hollandaca kelime...">
+        <button class="ai-btn" id="searchAiDictBtn" style="width: 100%; justify-content: center;">🤖 Akıllı Analiz ve Kart Yap</button>
+        <div class="correction-box" id="aiDictResult" style="display: none;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('aiDictModal')">Kapat</button></div>
+    </div>
+
+    <!-- 7. LIVE AI CHAT MENTOR MODAL -->
+    <div class="modal full-screen" id="chatModal">
+        <h3>💬 AI Canlı Mentor Sohbeti</h3>
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <select id="chatPersona" style="font-size:12px; padding:6px;">
+                <option value="friendly">😊 Neşeli Dil Partneri (A1-B1)</option>
+                <option value="strict">👨‍🏫 Sert Gramer Hocası (B2+)</option>
+                <option value="landlord">🏠 Huurbaas (Sert Ev Sahibi Simülasyonu)</option>
+                <option value="official">🏢 Belediye Memuru (Resmi Dil)</option>
+            </select>
+        </div>
+        <div class="chat-area-box" id="chatMessages"></div>
+        <div style="display: flex; gap: 6px;">
+            <input type="text" id="chatInput" placeholder="Hollandaca bir şeyler yazın...">
+            <button class="btn-primary" id="sendChatBtn">Gönder</button>
+        </div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('chatModal')">Kapat</button></div>
+    </div>
+
+    <!-- 8. PODCAST STATION MODAL -->
+    <div class="modal full-screen" id="podcastModal">
+        <h3>🎙 AI Kişisel Podcast İstasyonu</h3>
+        <button class="ai-btn" id="generatePodcastBtn" style="width:100%; justify-content:center;">🎧 Günlük Dinleme Dosyası Hazırla</button>
+        <div class="correction-box" id="podcastOutput" style="display:none; text-align:center;">
+            <div style="font-size:24px; margin-bottom:10px;">📻</div>
+            <div id="podcastStatusText" style="font-weight:700;">Yayın Hazır</div>
+            <button class="btn-primary" id="playPodcastBtn" style="margin-top:8px;">▶ Dinlemeyi Başlat</button>
+        </div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('podcastModal')" id="closePodcastBtn">Kapat</button></div>
+    </div>
+
+    <!-- 9. CULTURE SHOCK RPG MODAL -->
+    <div class="modal full-screen" id="rpgModal">
+        <h3>🎭 Kültür Şoku RPG Simülatörü</h3>
+        <div id="rpgCqDisplay" style="font-size: 14px; font-weight: 700; color: var(--orange); margin-bottom: 8px;">Kültürel IQ: 50</div>
+        <div class="chat-area-box" id="rpgMessages"></div>
+        <div style="display: flex; gap: 6px; flex-direction:column;">
+            <div style="display:flex; gap:4px;" id="rpgActionOptions"></div>
+            <input type="text" id="rpgCustomInput" placeholder="Kendi aksiyonunuzu yazın...">
+            <button class="btn-primary" id="sendRpgBtn">Harekete Geç</button>
+        </div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('rpgModal')">Oyundan Çık</button></div>
+    </div>
+
+    <!-- 10. WHATSAPP SIMULATOR MODAL -->
+    <div class="modal full-screen" id="whatsappModal">
+        <h3>📱 WhatsApp Dil Simülatörü</h3>
+        <div style="padding-bottom:10px;">
+            <select id="waPersona" style="width:100%; font-size:12px; background:var(--surface3); border:none; color:white; border-radius:8px;">
+                <option value="friend">Sophie (Arkadaş)</option>
+                <option value="boss">Meneer de Vries (Patron)</option>
+                <option value="delivery">Bezorgdienst (Kurye - Paket Sorunu)</option>
+                <option value="neighbor">De Buurman (Gürültücü Komşu)</option>
+            </select>
+        </div>
+        <div class="chat-area-box" id="waMessages" style="background: #0b141a; border: none;"></div>
+        <div style="display: flex; gap: 6px;">
+            <input type="text" id="waInput" placeholder="Mesaj yazın...">
+            <button class="btn-primary" id="waSendBtn" style="background:#00a884; color:white;">➤</button>
+        </div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('whatsappModal')">Ayrıl</button></div>
+    </div>
+
+    <!-- 11. PERSONALITY PROFILE MODAL -->
+    <div class="modal" id="personalityModal">
+        <h3>🧬 Linguistik Kişilik Profili</h3>
+        <div id="personalityOutput" class="correction-box">Verileriniz işleniyor... Tam profil için kart çalışmaya devam edin.</div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('personalityModal')">Kapat</button></div>
+    </div>
+
+    <!-- 12. MEMORY PALACE MODAL -->
+    <div class="modal" id="memoryModal">
+        <h3>🏛 Hafıza Sarayı Mnemoni Üretici</h3>
+        <input type="text" id="memoryWordInput" placeholder="Unuttuğunuz zor bir kelime yazın...">
+        <button class="ai-btn" id="generateMemoryBtn" style="width: 100%; justify-content: center;">🧠 Hafıza Kancası Oluştur</button>
+        <div id="memoryResult" class="correction-box" style="display: none; flex-direction: column; gap: 8px;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('memoryModal')">Kapat</button></div>
+    </div>
+
+    <!-- 13. SOCIAL INTELLIGENCE ENGINE MODAL -->
+    <div class="modal" id="socialModal">
+        <h3>🤝 Sosyal Zeka & Pragmatik Motoru</h3>
+        <textarea id="socialScenarioInput" placeholder="Hollandalı bir komşunuz, iş arkadaşınız veya resmi merci ile yaşadığınız sosyal açmazı yazın..."></textarea>
+        <button class="ai-btn" id="runSocialBtn" style="width:100%; justify-content:center;">💡 Pragmatik Analiz Çalıştır</button>
+        <div id="socialResult" class="correction-box" style="display:none; flex-direction: column; gap: 8px;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('socialModal')">Kapat</button></div>
+    </div>
+
+    <!-- 14. AI WORD MATCHING GAME MODAL -->
+    <div class="modal" id="matchingModal">
+        <h3>🎯 AI Kelime Eşleştirme Oyunu</h3>
+        <div id="matchingGameZone" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;"></div>
+        <div id="matchingResult" style="text-align: center; font-weight: bold; margin-top: 8px; color: var(--orange)"></div>
+        <div class="modal-buttons">
+            <button class="btn-primary" id="checkMatchingBtn" style="display: none;">Kontrol Et</button>
+            <button class="btn-secondary" onclick="closeModal('matchingModal')">Oyunu Kapat</button>
+        </div>
+    </div>
+
+    <!-- 15. NEWS ACCORDION FEED MODAL -->
+    <div class="modal full-screen" id="newsModal">
+        <h3>📰 Günlük Haber Akışı & Analizi</h3>
+        <button class="ai-btn" id="generateNewsBtn" style="width:100%; justify-content:center;">🌐 Haberleri Çek & Seviyelendir</button>
+        <div id="newsFeedBox" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; overflow-y:auto;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('newsModal')">Kapat</button></div>
+    </div>
+
+    <!-- 16. REGIONAL ACCENT DECODER MODAL -->
+    <div class="modal" id="accentModal">
+        <h3>🗣 Bölgesel Aksan Kod Çözücü</h3>
+        <select id="accentType">
+            <option value="street">Straattaal (Sokak Ağzı / Gençlik Dili)</option>
+            <option value="amsterdam">Amsterdam Aksanı</option>
+            <option value="brabant">Brabant Şivesi (Zuid-Nederlands)</option>
+            <option value="business">Resmi İş / Politika Flemenkçesi</option>
+        </select>
+        <input type="text" id="accentWordInput" placeholder="İncelemek istediğiniz ifade (Boş bırakılırsa popüler örnekler gelir)">
+        <button class="ai-btn" id="generateAccentBtn" style="width:100%; justify-content:center;">🔊 Aksanı Çözümle</button>
+        <div id="accentResult" class="correction-box" style="display:none; flex-direction: column; gap: 8px;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('accentModal')">Kapat</button></div>
+    </div>
+
+    <!-- 17. MUSIC & LYRICS ANALYSIS MODAL -->
+    <div class="modal full-screen" id="lyricsModal">
+        <h3>🎵 Şarkı & Karaoke Linguistik Analiz</h3>
+        <input type="text" id="lyricsSongInput" placeholder="Şarkı adı veya sanatçı (Örn: Marco Borsato)...">
+        <button class="ai-btn" id="generateLyricsBtn" style="width:100%; justify-content:center;">🎶 Şarkı Sözlerini Parçala</button>
+        <div id="lyricsResult" class="correction-box" style="display:none; overflow-y:auto; flex-direction: column; gap: 8px; -webkit-overflow-scrolling: touch;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('lyricsModal')">Kapat</button></div>
+    </div>
+
+    <!-- 18. LINGUISTIC DNA MODAL -->
+    <div class="modal" id="linguaDnaModal">
+        <h3>🧠 Linguistik DNA Spektrum Analizi</h3>
+        <textarea id="dnaInput" placeholder="İncelemek istediğiniz Hollandaca metni girin..." style="height: 100px; margin-bottom: 8px;"></textarea>
+        <button class="ai-btn" id="analyzeDnaBtn" style="width: 100%; justify-content: center;">🧠 Analiz Yap</button>
+        <div id="linguaDnaResult" class="correction-box" style="display: none; margin-top: 8px;">DNA modeliniz kart çalışma alışkanlıklarınıza ve hata tiplerinize göre gerçek zamanlı hesaplanır.</div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('linguaDnaModal')">Kapat</button></div>
+    </div>
+
+    <!-- 19. ERROR MUSEUM SHOWCASE MODAL -->
+    <div class="modal" id="errorMuseumModal">
+        <h3>🏛 Kişisel Hata Müzesi Sergisi</h3>
+        <div id="museumStats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px;"></div>
+        <div id="errorMuseumList" style="display:flex; flex-direction:column; gap:8px; max-height: 250px; overflow-y: auto;"></div>
+        <button class="ai-btn" id="museumAiBtn" style="width: 100%; justify-content: center; margin-top: 8px;">✨ AI Müze Analizi Yap</button>
+        <div id="museumAiInsight" class="correction-box" style="display: none; margin-top: 8px;"></div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('errorMuseumModal')">Kapat</button></div>
+    </div>
+
+    <!-- 20. SYSTEM STATS DASHBOARD MODAL -->
+    <div class="modal" id="statsModal">
+        <h3>📊 İlerleme & Analitik Dashboard</h3>
+        <div class="study-summary" id="studySummaryBox">Bugünkü çalışma özeti hazırlanıyor.</div>
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-number" id="statsTotalCards">0</div><div class="stat-label">Toplam Kart</div></div>
+            <div class="stat-card green"><div class="stat-number" id="statsLearnedCards">0</div><div class="stat-label">Öğrenilenler</div></div>
+            <div class="stat-card blue"><div class="stat-number" id="statsTotalRepetitions">0</div><div class="stat-label">Tekrarlar</div></div>
+            <div class="stat-card red"><div class="stat-number" id="statsTotalErrors">0</div><div class="stat-label">Toplam Hata</div></div>
+        </div>
+        <div style="background: var(--surface2); border-radius: 14px; padding: 14px; border: 1px solid var(--border); overflow: hidden;">
+            <div style="font-size:12px; font-weight:700; margin-bottom:10px; color:var(--subtle);">📅 Öğrenme Trendi (Haftalık)</div>
+            <canvas id="statsChart"></canvas>
+        </div>
+        <div style="background: var(--surface2); border-radius: 14px; padding: 14px; border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 13px; font-weight: 700;">🎯 Günlük Hedef</span>
+                <span id="dailyGoalText" style="font-size: 12px; color: var(--orange); font-weight: 700;">0 / 10</span>
+            </div>
+            <div style="background: var(--surface3); border-radius: 8px; height: 8px; overflow: hidden;">
+                <div id="dailyGoalBar" style="height: 100%; background: linear-gradient(90deg, var(--orange), var(--green)); border-radius: 8px; transition: width 0.4s; width: 0%;"></div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                <span style="font-size: 12px; color: var(--subtle);">Hedef:</span>
+                <input type="number" id="dailyGoalInput" min="1" max="200" value="10" style="width: 70px; background: var(--surface3); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; color: var(--text); font-size: 13px;">
+                <button class="btn-primary" style="padding: 6px 14px; font-size: 12px;" onclick="saveDailyGoal()">Kaydet</button>
+            </div>
+        </div>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('statsModal')">Kapat</button></div>
+    </div>
+
+    <!-- 21. SETTINGS & AUTO BACKUP MODAL -->
+    <div class="modal" id="settingsModal">
+        <h3>⚙️ Gelişmiş Ayarlar & Veri Güvenliği</h3>
+        <button class="btn-primary" style="width: 100%; margin-bottom: 8px;" id="exportDataBtn">📥 Verileri Dışa Aktar (JSON)</button>
+        <button class="btn-secondary" style="width: 100%; margin-bottom: 8px;" onclick="document.getElementById('importFileInput').click()">📤 Verileri İçe Aktar (JSON)</button>
+        <input type="file" id="importFileInput" style="display:none;" accept=".json">
+        <button class="btn-secondary" style="width: 100%; margin-bottom: 8px; border-color: var(--green);" onclick="document.getElementById('importCsvInput').click()">📊 Toplu Kart İçe Aktar (CSV)</button>
+        <input type="file" id="importCsvInput" style="display:none;" accept=".csv,.txt">
+        <div style="font-size: 11px; color: var(--subtle); margin-bottom: 8px; padding: 8px; background: var(--surface2); border-radius: 10px;">CSV formatı: <code>kelime,anlam,örnek_cümle</code> (her satır bir kart)</div>
+        <div style="margin-top:10px; padding:10px; border-top:1px solid var(--border);">
+            <label style="display:flex; align-items:center; gap:10px; font-size:13px; cursor:pointer;">
+                <input type="checkbox" id="oledToggle" style="width:18px; height:18px;"> 🌑 OLED Saf Siyah Modu
+            </label>
+        </div>
+        <button class="btn-danger" style="width:100%;" id="resetApiKeyBtn">🔑 Groq API Anahtarını Sil</button>
+        <div class="modal-buttons"><button class="btn-secondary" onclick="closeModal('settingsModal')">Kapat</button></div>
+    </div>
+
+    <!-- 22. MULTI-DECK STUDY MODAL -->
+    <div class="modal" id="multiDeckModal">
+        <h3>🎯 Çalışılacak Desteleri Seç</h3>
+        <div id="multiDeckList" style="display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding: 4px; background: var(--surface2); border-radius: 12px; margin-bottom: 12px;"></div>
+        <div class="modal-buttons">
+            <button class="btn-secondary" onclick="closeModal('multiDeckModal')">İptal</button>
+            <button class="btn-primary" id="startMultiDeckBtn">Oturumu Başlat</button>
+        </div>
+    </div>
+
+    <!-- 23. AI KART ÜRETİCİ MODAL -->
+    <div class="modal" id="aiCardGenModal">
+        <h3>🤖 AI Otomatik Kart Üretici</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <input type="text" id="aiGenTopic" placeholder="Konu (Örn: renkler, yiyecekler...)">
+            <select id="aiGenLevel">
+                <option value="A1">A1 Başlangıç</option>
+                <option value="A2">A2 Temel</option>
+                <option value="B1" selected>B1 Orta</option>
+                <option value="B2">B2 Üst Orta</option>
+            </select>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <label style="font-size:12px; color:var(--subtle); white-space:nowrap;">Kart sayısı:</label>
+            <input type="number" id="aiGenCount" value="10" min="3" max="30" style="width:70px;">
+            <select id="aiGenDeckTarget" style="flex:1;"></select>
+        </div>
+        <button class="ai-btn" id="aiGenCardsBtn" style="width:100%; justify-content:center;">✨ Kartları Üret</button>
+        <div id="aiGenPreview" style="display:none; max-height:220px; overflow-y:auto; flex-direction:column; gap:6px; -webkit-overflow-scrolling:touch;"></div>
+        <div class="modal-buttons">
+            <button class="btn-secondary" onclick="closeModal('aiCardGenModal')">Kapat</button>
+            <button class="btn-primary" id="aiGenSaveBtn" style="display:none;" onclick="saveAiGeneratedCards()">💾 Tümünü Kaydet</button>
+        </div>
+    </div>
+
+    <!-- PERSISTENT APP STATE SCRIPT ARCHITECTURE -->
+    <script type="module" src="ai-bridge.js"></script>
+    <script defer src="app.js"></script>
+</body>
+</html>
