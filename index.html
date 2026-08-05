@@ -25,6 +25,7 @@
 
     <!-- PWA MANIFEST - Güvenlik ve Standardizasyon gereği dış dosyaya taşındı -->
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
 
     <title>LinguaPrime</title>
     <!-- Premium Grafik Kütüphanesi -->
@@ -109,6 +110,7 @@
             <div class="sidebar-item secondary-tool" id="accentBtn">Telaffuz farkları</div>
             <div class="sidebar-item secondary-tool" id="lyricsBtn">Şarkı ifadeleri</div>
             <div class="sidebar-item secondary-tool" id="linguaDnaBtn">Dil profili</div>
+            <div class="sidebar-item secondary-tool" id="personalityBtn">Kişilik profili</div>
             <div class="sidebar-item secondary-tool" id="errorMuseumBtn">Hata geçmişi</div>
             <div class="sidebar-item" id="settingsBtn">Ayarlar ve veri</div>
         </div>
@@ -141,6 +143,9 @@
             <button class="mode-btn" data-mode="typing">Yaz</button>
             <button class="mode-btn" data-mode="mcq">Seç</button>
             <button class="mode-btn" data-mode="woordvolgorde">Cümle</button>
+            <button class="mode-btn" data-mode="hint">İpucu</button>
+            <button class="mode-btn" data-mode="verbdrill">Fiil</button>
+            <button class="mode-btn" data-mode="grammarfill">Artikel</button>
         </div>
 
         <div class="direction-toggle">
@@ -517,7 +522,7 @@
             <div class="stat-card blue"><div class="stat-number" id="statsTotalRepetitions">0</div><div class="stat-label">Tekrarlar</div></div>
             <div class="stat-card red"><div class="stat-number" id="statsTotalErrors">0</div><div class="stat-label">Toplam Hata</div></div>
         </div>
-        <div style="background: var(--surface2); border-radius: 14px; padding: 14px; border: 1px solid var(--border); overflow: hidden;">
+        <div style="background: var(--surface2); border-radius: 14px; padding: 14px; border: 1px solid var(--border); overflow: hidden; height: 240px;">
             <div style="font-size:12px; font-weight:700; margin-bottom:10px; color:var(--subtle);">📅 Öğrenme Trendi (Haftalık)</div>
             <canvas id="statsChart"></canvas>
         </div>

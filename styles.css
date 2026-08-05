@@ -465,6 +465,14 @@ td { padding: 10px; border-bottom: 1px solid var(--border); color: var(--text); 
     font-size: 12px; border: 1px solid var(--orange); margin-top: 10px;
 }
 
+/* Cümle dizilimi yanlış-cevap geri bildirimi */
+.wv-word.wv-disabled { pointer-events: none; opacity: 0.45; }
+.puzzle-correct {
+    margin-top: 8px; padding: 8px 12px; border-radius: 10px;
+    background: rgba(34, 197, 94, 0.08); border: 1px solid var(--green);
+    color: var(--green); font-weight: 700; font-size: 13px; text-align: center;
+}
+
 
 @media (max-width: 560px) {
     .main { padding-top: calc(66px + env(safe-area-inset-top)); }

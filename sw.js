@@ -1,5 +1,5 @@
 /* Kılavuz 2: Gelişmiş Service Worker Stratejisi */
-const CACHE_NAME = 'linguaprime-v3.1-coach';
+const CACHE_NAME = 'linguaprime-v3.2-coach';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -32,9 +32,10 @@ self.addEventListener('fetch', (e) => {
   }
   
   // Statik assetler için cache first
-  const isStaticAsset = STATIC_ASSETS.some(asset => 
-    e.request.url.endsWith(asset.replace('./', ''))
-  ) || e.request.url.includes('.css') || e.request.url.includes('.js');
+  const isStaticAsset = STATIC_ASSETS.some(asset => {
+    const path = asset.replace('./', '');
+    return path !== '' && e.request.url.endsWith(path);
+  }) || e.request.url.includes('.css') || e.request.url.includes('.js');
 
   if (isStaticAsset) {
     e.respondWith(

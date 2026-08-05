@@ -40,6 +40,7 @@ let podcastPlaying = false;
 let podcastLines = [];
 let podcastCurrentLine = 0;
 let deferredPrompt = null; // PWA Install event placeholder
+let renderToken = 0; // Eski render zamanlayıcılarını geçersiz kılmak için
 
 const THEMATIC_DECKS = [
     { id: "tema_market", name: "Market", color: "#D97706" },
@@ -111,6 +112,7 @@ function initApp() {
     
     setupEventListeners();
     applyStoredTheme();
+    applyStoredOled();
     renderSidebar();
     applyDyslexicPreference();
     selectDeck(activeDeckId);
@@ -263,6 +265,17 @@ function save() {
     }, 100); // Debounce for 100ms
 }
 
+function flushSave() {
+    if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        saveTimeout = null;
+    }
+    try { localStorage.setItem("linguaprime_data_v2", JSON.stringify(appData)); } catch (_) {}
+}
+// Debounce sonrası beklemeden sayfa kapanırsa veri kaybolmasın
+window.addEventListener("beforeunload", flushSave);
+window.addEventListener("pagehide", flushSave);
+
 function toggleSidebar(e) {
     if (e && e.cancelable) { e.preventDefault(); e.stopPropagation(); }
     const sidebar = document.getElementById("sidebar");
@@ -275,8 +288,12 @@ function setupEventListeners() {
     // Layout hooks
     const menuBtn = document.getElementById("menuBtn");
     if (menuBtn) {
+        // Dokunmatik cihazlarda touchstart + click'in çift tetiklemesini önler.
+        menuBtn.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            toggleSidebar(e);
+        }, { passive: false });
         menuBtn.onclick = toggleSidebar;
-        menuBtn.addEventListener("touchstart", toggleSidebar, { passive: false });
     }
 
     const streakBadge = document.getElementById("streakBadge");
@@ -598,7 +615,7 @@ function renderSidebar() {
         item.innerHTML = `
             <span style="display:flex; align-items:center; gap:6px;">
                 <span class="deck-color-dot" style="background:${color};"></span>
-                ${emoji} ${deck.name} <span style="opacity:0.6; font-size:11px;">${count} kart · ${newCount} yeni · ${dueCount} bekliyor</span>
+                ${escapeHtml(emoji)} ${escapeHtml(deck.name)} <span style="opacity:0.6; font-size:11px;">${count} kart · ${newCount} yeni · ${dueCount} bekliyor</span>
             </span>
             <div class="sidebar-item-actions">
                 <button class="delete-deck-btn" onclick="deleteDeck('${deck.id}', event)">🗑</button>
@@ -620,7 +637,7 @@ function populateMultiDeckList() {
         div.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 8px;";
         div.innerHTML = `
             <input type="checkbox" class="deck-checkbox" value="${deck.id}" ${checked} style="width: 18px; height: 18px;">
-            <span style="font-size: 13px; font-weight: 600; color: var(--text);">${deck.name} (${count})</span>
+            <span style="font-size: 13px; font-weight: 600; color: var(--text);">${escapeHtml(deck.name)} (${count})</span>
         `;
         container.appendChild(div);
     });
@@ -653,7 +670,7 @@ function populateStoryDeckSelector() {
         div.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 4px;";
         div.innerHTML = `
             <input type="checkbox" class="story-deck-checkbox" value="${deck.id}" style="width: 16px; height: 16px;">
-            <span style="font-size: 12px; color: var(--text);">${deck.name}</span>
+            <span style="font-size: 12px; color: var(--text);">${escapeHtml(deck.name)}</span>
         `;
         container.appendChild(div);
     });
@@ -708,8 +725,8 @@ function initializeStudySession(deckId) {
     currentFilteredCards = dueCards.length > 0 ? dueCards : allCardsInScope;
     currentCardIndex = 0; // Always start from the beginning of the filtered list
     
-    // Shuffle the cards for a fresh session
-    currentFilteredCards = currentFilteredCards.sort(() => Math.random() - 0.5);
+    // Shuffle the cards for a fresh session (Fisher-Yates)
+    currentFilteredCards = shuffleArray(currentFilteredCards);
 
     selectCardForDisplay();
 }
@@ -809,6 +826,10 @@ function renderCurrentCardMode() {
     const cardEl = document.getElementById("mainCard");
     cardEl.classList.remove("flipped");
 
+    // Render token: eski 300ms zamanlayıcılarının yeni karta yazmasını engeller
+    const token = ++renderToken;
+    const cardId = currentCard.id;
+
     // Yönü belirle
     let dir = studyDirection;
     if (dir === "random") dir = Math.random() > 0.5 ? "NL2TR" : "TR2NL";
@@ -823,6 +844,7 @@ function renderCurrentCardMode() {
     const backTTS    = isReversed ? "nl-NL" : "tr-TR";
 
     setTimeout(() => {
+        if (token !== renderToken || !currentCard || currentCard.id !== cardId) return;
         document.getElementById("cardDeckBadge").textContent = appData.decks.find(d => d.id === currentCard.deckId)?.name || "Genel";
         document.getElementById("cardLevelBadge").textContent = currentCard.level || inferLevel(currentCard);
         document.getElementById("cardNextBadge").textContent = formatNextReview(currentCard);
@@ -836,6 +858,7 @@ function renderCurrentCardMode() {
         
         // Zengin İçerik (Fiil Çekimi & Zıt Anlam) Kontrolü
         enrichCardMetadata(currentCard);
+        updateMasteryBars();
 
         const mnemonicBox = document.getElementById("cardMnemonic");
         if (mnemonicBox) { mnemonicBox.textContent = currentCard.mnemonic || ""; mnemonicBox.style.display = currentCard.mnemonic ? "block" : "none"; }
@@ -889,9 +912,12 @@ function renderCurrentCardMode() {
                     handleAnswer("good");
                 } else {
                     inp.className = "type-input wrong";
+                    inp.disabled = true;
+                    checkBtn.disabled = true;
                     hint.textContent = `Doğru cevap: ${backText}`;
                     hint.style.color = "var(--red)";
                     showToast("✗ Yanlış!", "var(--red)");
+                    setTimeout(() => handleAnswer("again"), 1200);
                 }
             };
             checkBtn.onclick = (e) => { e.stopPropagation(); checkTyping(); };
@@ -954,11 +980,11 @@ function renderCurrentCardMode() {
             mcqGrid.style.cssText = "display: grid; grid-template-columns: 1fr; gap: 8px; width: 100%; max-width: 340px; margin: 10px auto 0;";
             
             let pool = appData.cards.filter(c => c.id !== currentCard.id).map(c => isReversed ? (c.word || "") : (c.meaning || ""));
-            pool = [...new Set(pool)]; 
-            pool.sort(() => 0.5 - Math.random());
+            pool = [...new Set(pool)];
+            pool = shuffleArray(pool);
             let choices = pool.slice(0, 3);
-            choices.push(backText); 
-            choices.sort(() => 0.5 - Math.random()); 
+            choices.push(backText);
+            choices = shuffleArray(choices);
             
             choices.forEach(choice => {
                 const btn = document.createElement("button");
@@ -974,8 +1000,14 @@ function renderCurrentCardMode() {
                     } else {
                         btn.style.borderColor = "var(--red)";
                         btn.style.background = "rgba(239,68,68,0.05)";
-                        showToast("✗ Yanlış Seçenek!", "var(--red)");
-                        handleAnswer("again");
+                        mcqGrid.querySelectorAll("button").forEach(b => b.disabled = true);
+                        const correctBtn = Array.from(mcqGrid.children).find(b => b.textContent === backText);
+                        if (correctBtn) {
+                            correctBtn.style.borderColor = "var(--green)";
+                            correctBtn.style.background = "rgba(34,197,94,0.1)";
+                        }
+                        showToast("✗ Yanlış! Doğru seçenek yeşil işaretlendi.", "var(--red)");
+                        setTimeout(() => handleAnswer("again"), 1200);
                     }
                 };
                 mcqGrid.appendChild(btn);
@@ -988,25 +1020,49 @@ function renderCurrentCardMode() {
                 conj = { ik: parts[0] || "", jij: parts[1] || "", wij: parts[2] || "" };
             }
             if (!conj) {
-                testArea.innerHTML = "<p style='color:var(--subtle);'>Bu kart için çekim bilgisi yok.</p>";
+                const p = document.createElement("p");
+                p.style.color = "var(--subtle)";
+                p.textContent = "Bu kart için çekim bilgisi yok.";
+                testArea.appendChild(p);
             } else {
-                testArea.innerHTML = `
-                    <div class="verb-drill-grid">
-                        <div class="verb-drill-row"><span class="verb-person">ik</span><input type="text" class="verb-input" id="v1" placeholder="${conj.ik}"></div>
-                        <div class="verb-drill-row"><span class="verb-person">jij</span><input type="text" class="verb-input" id="v2" placeholder="${conj.jij}"></div>
-                        <div class="verb-drill-row"><span class="verb-person">wij</span><input type="text" class="verb-input" id="v3" placeholder="${conj.wij}"></div>
-                    </div>
-                    <button class="btn-primary" style="width:100%; margin-top:8px;" onclick="checkVerbDrill(event, '${conj.ik}', '${conj.jij}', '${conj.wij}')">Kontrol Et</button>
-                `;
+                const grid = document.createElement("div");
+                grid.className = "verb-drill-grid";
+                const inputs = [];
+                [["ik", conj.ik], ["jij", conj.jij], ["wij", conj.wij]].forEach(([person, form]) => {
+                    const row = document.createElement("div");
+                    row.className = "verb-drill-row";
+                    const span = document.createElement("span");
+                    span.className = "verb-person";
+                    span.textContent = person;
+                    const inp = document.createElement("input");
+                    inp.type = "text";
+                    inp.className = "verb-input";
+                    inp.id = "v" + (inputs.length + 1);
+                    inp.placeholder = form || "";
+                    row.append(span, inp);
+                    grid.appendChild(row);
+                    inputs.push(inp);
+                });
+                testArea.appendChild(grid);
+                const checkBtn = document.createElement("button");
+                checkBtn.className = "btn-primary";
+                checkBtn.style.cssText = "width:100%; margin-top:8px;";
+                checkBtn.textContent = "Kontrol Et";
+                checkBtn.onclick = (e) => { e.stopPropagation(); checkVerbDrill(); };
+                testArea.appendChild(checkBtn);
             }
         } else if (activeMode === "grammarfill") {
             const article = currentCard.article || "unknown";
-            testArea.innerHTML = `
-                <div class="grammar-options">
-                    <button class="grammar-opt-btn" onclick="checkGrammarFill('de', '${article}', event)">de</button>
-                    <button class="grammar-opt-btn" onclick="checkGrammarFill('het', '${article}', event)">het</button>
-                </div>
-            `;
+            const grammarWrap = document.createElement("div");
+            grammarWrap.className = "grammar-options";
+            [["de", article], ["het", article]].forEach(([chosen, correct]) => {
+                const gBtn = document.createElement("button");
+                gBtn.className = "grammar-opt-btn";
+                gBtn.textContent = chosen;
+                gBtn.onclick = (e) => { e.stopPropagation(); checkGrammarFill(chosen, correct, e); };
+                grammarWrap.appendChild(gBtn);
+            });
+            testArea.appendChild(grammarWrap);
         } else if (activeMode === "woordvolgorde") {
             buildSentencePuzzle(currentCard.sentence);
         }
@@ -1121,26 +1177,41 @@ function checkPuzzleAnswer() {
         document.getElementById("mainCard").classList.add("flipped");
         handleAnswer("good");
     } else {
-        showToast("Hatalı dizilim, tekrar dene!", "var(--red)");
-        handleAnswer("again");
+        showToast("Hatalı dizilim! Doğru sıralama gösteriliyor.", "var(--red)");
+        document.querySelectorAll("#testArea .wv-word").forEach(b => b.classList.add("wv-disabled"));
+        const correctLine = document.createElement("div");
+        correctLine.className = "puzzle-correct";
+        correctLine.textContent = target;
+        zone.parentElement.appendChild(correctLine);
+        setTimeout(() => handleAnswer("again"), 1500);
     }
 }
 
-function checkVerbDrill(e, ikAns, jijAns, wijAns) {
-    e.stopPropagation();
-    let u1 = document.getElementById("v1").value.trim();
-    let u2 = document.getElementById("v2").value.trim();
-    let u3 = document.getElementById("v3").value.trim();
+function checkVerbDrill(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (!currentCard) return;
+    let conj = currentCard.aiConj || null;
+    if (!conj && currentCard.modalConjugation) {
+        const parts = currentCard.modalConjugation.split(",").map(s => s.trim());
+        conj = { ik: parts[0] || "", jij: parts[1] || "", wij: parts[2] || "" };
+    }
+    if (!conj) {
+        showToast("Bu kart için çekim bilgisi yok.", "var(--orange)");
+        return;
+    }
+    const u1 = (document.getElementById("v1")?.value || "").trim();
+    const u2 = (document.getElementById("v2")?.value || "").trim();
+    const u3 = (document.getElementById("v3")?.value || "").trim();
     const norm = (s) => normalizeForComparison(s);
-    const c1 = norm(u1) === norm(ikAns);
-    const c2 = norm(u2) === norm(u1 === u2 ? "" : jijAns); // Basit eşitlik kontrolü yerine normalize kullanıyoruz
-    const c3 = norm(u3) === norm(wijAns);
-    
-    document.getElementById("v1").className = `verb-input ${norm(u1) === norm(ikAns) ? 'correct' : 'wrong'}`;
-    document.getElementById("v2").className = `verb-input ${norm(u2) === norm(jijAns) ? 'correct' : 'wrong'}`;
-    document.getElementById("v3").className = `verb-input ${norm(u3) === norm(wijAns) ? 'correct' : 'wrong'}`;
-    
-    if (norm(u1) === norm(ikAns) && norm(u2) === norm(jijAns) && norm(u3) === norm(wijAns)) {
+    const c1 = norm(u1) === norm(conj.ik);
+    const c2 = norm(u2) === norm(conj.jij);
+    const c3 = norm(u3) === norm(conj.wij);
+
+    if (document.getElementById("v1")) document.getElementById("v1").className = `verb-input ${c1 ? 'correct' : 'wrong'}`;
+    if (document.getElementById("v2")) document.getElementById("v2").className = `verb-input ${c2 ? 'correct' : 'wrong'}`;
+    if (document.getElementById("v3")) document.getElementById("v3").className = `verb-input ${c3 ? 'correct' : 'wrong'}`;
+
+    if (c1 && c2 && c3) {
         showToast("Tüm çekimler doğru!", "var(--green)");
         document.getElementById("mainCard").classList.add("flipped");
         handleAnswer("good");
@@ -1212,9 +1283,9 @@ function handleAnswer(rating) {
     currentCard.nextReview = Date.now() + currentCard.interval * 24 * 60 * 60 * 1000;
     // ----------------------------------
 
-    // Seri hesaplama
+    // Seri hesaplama (yerel tarih tabanlı - UTC kayması düzeltildi)
     const today = new Date().toDateString();
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getLocalDateStr();
     if (appData.stats.lastStudyDate !== today) {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
@@ -1256,6 +1327,12 @@ function handleAnswer(rating) {
 }
 
 function checkAchievements() {
+    if (!Array.isArray(appData.achievements) || appData.achievements.length === 0) {
+        appData.achievements = [
+            { id: 0, name: "İlk Adım", earned: false },
+            { id: 1, name: "İstikrarlı Öğrenci", earned: false }
+        ];
+    }
     const reps = appData.stats.totalRepetitions || 0;
     if (reps === 10 && !appData.achievements[0].earned) {
         appData.achievements[0].earned = true;
@@ -1525,7 +1602,7 @@ async function handleStoryAi() {
         container.append(storyP, hr, transP);
     } catch(e) {
         console.error("Hikaye Ayrıştırma Hatası:", e);
-        document.getElementById("storyTextContainer").innerHTML = `<p style="font-size:13px; color:var(--red);">Hikaye formatı çözümlenemedi. Yapay zeka yanıtı:</p><pre style="white-space:pre-wrap; font-size:12px;">${res}</pre>`;
+        document.getElementById("storyTextContainer").innerHTML = `<p style="font-size:13px; color:var(--red);">Hikaye formatı çözümlenemedi. Yapay zeka yanıtı:</p><pre style="white-space:pre-wrap; font-size:12px;">${escapeHtml(res)}</pre>`;
         setMascot("storyMascot", "sad");
     }
 }
@@ -1576,7 +1653,8 @@ async function handleLiveChat() {
     inputEl.value = "";
     msgBox.scrollTop = msgBox.scrollHeight;
     
-    let persona = document.getElementById("chatPersona").value;
+    const personaSel = document.getElementById("chatPersona");
+    let persona = personaSel.selectedOptions[0]?.textContent || personaSel.value;
     let prompt = `Senin kişiliğin: ${persona}. Kullanıcının yazdığı şu Hollandaca mesaja uygun bir cevap ver (Sadece Hollandaca konuş): "${text}"`;
     
     let res = await runGroqAi(prompt);
@@ -1714,7 +1792,8 @@ async function handleWhatsAppMessage() {
     box.scrollTop = box.scrollHeight;
     inp.value = "";
     
-    const persona = document.getElementById("waPersona").value;
+    const personaSel = document.getElementById("waPersona");
+    const persona = personaSel.selectedOptions[0]?.textContent || personaSel.value;
     let prompt = `WhatsApp simülasyonu. Rolün: ${persona}. Kullanıcının şu mesajına kısa, doğal ve karakterine uygun bir Hollandaca yanıt ver. Sadece Hollandaca konuş: ${txt}`;
     let res = await runGroqAi(prompt);
     
@@ -1740,11 +1819,11 @@ async function handleMemoryPalace() {
         data.scenes.forEach(s => {
             let div = document.createElement("div");
             div.className = "memory-card";
-            div.innerHTML = `<strong>${s.title}</strong><p style="font-size: 13px; margin-top: 4px;">${s.desc}</p>`;
+            div.innerHTML = `<strong>${escapeHtml(s.title)}</strong><p style="font-size: 13px; margin-top: 4px;">${escapeHtml(s.desc)}</p>`;
             r.appendChild(div);
         });
     } catch (e) {
-        r.innerHTML = `<div class="memory-card">${res}</div>`;
+        r.innerHTML = `<div class="memory-card">${escapeHtml(res)}</div>`;
     }
 }
 
@@ -1759,11 +1838,11 @@ async function handleSocialEngine() {
         data.layers.forEach(l => {
             let div = document.createElement("div");
             div.className = "social-layer";
-            div.innerHTML = `<span class="social-layer-title">${l.title}</span><p style="font-size: 13px; margin-top: 4px;">${l.desc}</p>`;
+            div.innerHTML = `<span class="social-layer-title">${escapeHtml(l.title)}</span><p style="font-size: 13px; margin-top: 4px;">${escapeHtml(l.desc)}</p>`;
             r.appendChild(div);
         });
     } catch (e) {
-        r.innerHTML = `<div class="social-layer">${res}</div>`;
+        r.innerHTML = `<div class="social-layer">${escapeHtml(res)}</div>`;
     }
 }
 
@@ -1773,8 +1852,8 @@ function generateMatchingGame() {
     document.getElementById("matchingResult").textContent = "";
     
     matchingPairs = appData.cards.slice(0, 4).map(c => ({ word: c.word, meaning: c.meaning }));
-    let shuffledLeft = [...matchingPairs].sort(() => Math.random() - 0.5);
-    let shuffledRight = [...matchingPairs].sort(() => Math.random() - 0.5);
+    let shuffledLeft = shuffleArray(matchingPairs);
+    let shuffledRight = shuffleArray(matchingPairs);
 
     shuffledLeft.forEach(item => {
         let btn = document.createElement("button");
@@ -1858,7 +1937,7 @@ async function handleNewsFeed() {
             box.appendChild(div);
         });
     } catch (e) {
-        box.innerHTML = `<div class="correction-box">${res}</div>`;
+        box.innerHTML = `<div class="correction-box">${escapeHtml(res)}</div>`;
     }
 }
 
@@ -1888,7 +1967,7 @@ async function handleAccentDecoder() {
         block.append(stdStrong, stdText, document.createElement("br"), accStrong, accSpan, document.createElement("br"), meanSmall);
         r.appendChild(block);
     } catch (e) {
-        r.innerHTML = `<div class="accent-block">${res}</div>`;
+        r.innerHTML = `<div class="accent-block">${escapeHtml(res)}</div>`;
     }
 }
 
@@ -1913,7 +1992,7 @@ async function handleLyricsBreakdown() {
             r.appendChild(div);
         });
     } catch (e) {
-        r.innerHTML = `<div class="correction-box">${res}</div>`;
+        r.innerHTML = `<div class="correction-box">${escapeHtml(res)}</div>`;
     }
 }
 
@@ -1941,7 +2020,7 @@ function renderErrorMuseum() {
     wrongCards.forEach(c => {
         let div = document.createElement("div");
         div.className = "correction-box";
-        div.innerHTML = `<strong>${c.word}</strong><p style="font-size:12px; color: var(--red);">Bu kelimeyi çalışırken tam ${c.wrong} kez hata kaydı müzeye eklendi.</p>`;
+        div.innerHTML = `<strong>${escapeHtml(c.word)}</strong><p style="font-size:12px; color: var(--red);">Bu kelimeyi çalışırken tam ${c.wrong} kez hata kaydı müzeye eklendi.</p>`;
         container.appendChild(div);
     });
 
@@ -2313,6 +2392,7 @@ function toggleTheme() {
     let isLight = document.body.classList.contains("light");
     document.getElementById("themeToggleBtn").textContent = isLight ? "🌙 Karanlık Mod" : "☀️ Işık Modu";
     localStorage.setItem("linguaprime_theme", isLight ? "light" : "dark");
+    renderWeekChart();
 }
 
 function applyStoredTheme() {
@@ -2369,9 +2449,9 @@ function renderWeekChart() {
     for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
-        const isoKey = d.toISOString().split("T")[0];
+        const isoKey = getLocalDateStr(d);
         labels.push(days[d.getDay() === 0 ? 6 : d.getDay() - 1]);
-        dataPoints.push(weeklyData[isoKey] || weeklyData[d.toDateString()] || 0);
+        dataPoints.push(weeklyData[isoKey] || 0);
     }
 
     if (statsChartInstance) statsChartInstance.destroy();
@@ -2471,7 +2551,7 @@ async function handleAiCardGeneration() {
             const div = document.createElement("div");
             div.style.cssText = "background:var(--surface2); border-radius:10px; padding:10px 12px; border-left:3px solid var(--orange); font-size:13px;";
             const meta = [c.level || level, c.context, c.register].filter(Boolean).join(" · ");
-            div.innerHTML = `<strong>${c.word}</strong> — ${c.meaning}<br><small style="color:var(--subtle);">${c.sentence || ""}</small><br><small style="color:var(--subtle);">${meta}</small>`;
+            div.innerHTML = `<strong>${escapeHtml(c.word)}</strong> — ${escapeHtml(c.meaning)}<br><small style="color:var(--subtle);">${escapeHtml(c.sentence || "")}</small><br><small style="color:var(--subtle);">${escapeHtml(meta)}</small>`;
             preview.appendChild(div);
         });
         saveBtn.style.display = aiGeneratedCards.length > 0 ? "block" : "none";
@@ -2529,8 +2609,10 @@ function updateProgress() {
     }
     currentAreaCount = pool.length;
 
-    const learnedCount = appData.cards.filter(c => (c.repetitions || 0) > 0).length;
-    const progressPercent = appData.cards.length > 0 ? (learnedCount / appData.cards.length) * 100 : 0;
+    // Üst progress bar aktif desteye göre; istatistik kartları global kalsın
+    const globalLearnedCount = appData.cards.filter(c => (c.repetitions || 0) > 0).length;
+    const learnedCount = pool.filter(c => (c.repetitions || 0) > 0).length;
+    const progressPercent = pool.length > 0 ? (learnedCount / pool.length) * 100 : 0;
 
     const dueCount = pool.filter(c => !c.nextReview || c.nextReview <= Date.now()).length;
     const newCount = pool.filter(c => (c.repetitions || 0) === 0 && (c.wrong || 0) === 0).length;
@@ -2545,7 +2627,7 @@ function updateProgress() {
     }
 
     document.getElementById("statsTotalCards").textContent = appData.cards.length;
-    document.getElementById("statsLearnedCards").textContent = learnedCount;
+    document.getElementById("statsLearnedCards").textContent = globalLearnedCount;
     document.getElementById("statsTotalRepetitions").textContent = appData.stats.totalRepetitions;
     document.getElementById("statsTotalErrors").textContent = appData.stats.totalErrors;
     document.getElementById("progressBarFill").style.width = `${progressPercent}%`;
@@ -2620,6 +2702,26 @@ function exportSystemData() {
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
 }
 
+function parseCsvLine(line) {
+    const result = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+            if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+            else if (ch === '"') inQuotes = false;
+            else current += ch;
+        } else {
+            if (ch === '"') inQuotes = true;
+            else if (ch === ",") { result.push(current.trim()); current = ""; }
+            else current += ch;
+        }
+    }
+    result.push(current.trim());
+    return result;
+}
+
 function importCsvData(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -2628,7 +2730,7 @@ function importCsvData(e) {
         const lines = evt.target.result.split(/\r?\n/).filter(l => l.trim());
         let added = 0, skipped = 0;
         lines.forEach(line => {
-            const parts = line.split(",").map(p => p.trim());
+            const parts = parseCsvLine(line);
             if (parts.length >= 2 && parts[0] && parts[1]) {
                 appData.cards.push({
                     id: "c_" + Date.now() + "_" + Math.random().toString(36).slice(2,6),
@@ -2682,6 +2784,28 @@ function importSystemData(e) {
 }
 
 // TOAST ENGINE & DRAWERS WINDOWS CONTROLLER
+function escapeHtml(str) {
+    return String(str ?? "").replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+}
+
+function getLocalDateStr(d = new Date()) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
+function shuffleArray(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
 function normalizeForComparison(str) {
     if (!str) return "";
     // Uzman Raporu 3.2-4: 'Ğ' -> 'G' ve diğer Türkçe karakterler için geliştirilmiş normalizasyon
@@ -2726,7 +2850,7 @@ function openModal(id) {
         let list = document.getElementById("weaknessListContainer"); list.innerHTML = "";
         appData.cards.filter(c => (c.wrong || 0) > 0).forEach(c => {
             let div = document.createElement("div"); div.className = "weakness-item";
-            div.innerHTML = `<strong>${c.word}</strong><p>Hata Payı: ${c.wrong} Kez | Anlamı: ${c.meaning}</p>`;
+            div.innerHTML = `<strong>${escapeHtml(c.word)}</strong><p>Hata Payı: ${c.wrong} Kez | Anlamı: ${escapeHtml(c.meaning)}</p>`;
             list.appendChild(div);
         });
         if(!list.innerHTML) list.innerHTML = "Harika! Şu an kronik zayıf kartınız bulunmuyor.";
